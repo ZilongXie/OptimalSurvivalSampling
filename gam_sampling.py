@@ -26,6 +26,7 @@ def find_position(nums, target):
     else:
         return mid
 
+# Search for the optimal threshold given a seqence of probabilies and subsampling rate 
 def find_c(pis, r):
     pis_temp = pis.copy()  
     pis_temp.sort()
@@ -42,38 +43,42 @@ def find_c(pis, r):
         c = (n * r - (n - m)) / sum(pis[:m])
     return c
 
-class DataGeneration(): # Time-invariant harzard
-    def __init__(self, hazard):
-        self.hazard = hazard
-        self.N = len(hazard)
+# Generate censored data
+class DataGeneration():
+    def __init__(self, N, study_length=6):
+        self.N = N
+        self.study_length = study_length
 
-    # True failure time
-    def failureTime(self):
-        failureTime = np.random.exponential(size=self.N, scale= 1/self.hazard)
-        return failureTime
+    # Generate failure time from exponential distribution (time-invariant intensity)
+    def generate_failure_time(self, hazard):
+        failure_time = np.random.exponential(size=self.N, scale= 1/hazard)
+        return failure_time
 
-    # Censoring time, controlled by parameter mu
-    def censoringTime(self, mu):
+    # Generate censoring time from exponential distribution, controlled by parameter mu
+    def generate_censoring_time(self, mu):
         temp = np.random.exponential(size=self.N, scale= 1/mu)
-        result = np.clip(temp, None, 6)  # set the length of study as 6
+        result = np.clip(temp, None, self.study_length)  # set the length of study
         return result
 
     # Get observed follow-up time and number of controls
-    def timeAndControls(self, failureTime, censoringTime):
-        result = np.minimum(failureTime, censoringTime)
-        uncensorIndicator = (failureTime <= censoringTime).astype(int)
-        censoringRate = uncensorIndicator.mean()
+    def time_and_controls(self, failure_time, censoring_time):
+        time_obs = np.minimum(failure_time, censoring_time)
+        uncensored_indicator = (failure_time <= censoring_time).astype(int)
+        censoring_rate = uncensored_indicator.mean()
 
-        return result, uncensorIndicator, censoringRate
+        return time_obs, uncensored_indicator, censoring_rate
 
-    def getData(self, mu): # censoringRate, 
-        a, b, c = self.timeAndControls(self.failureTime(), self.censoringTime(mu))
+    def get_data(self, mu, hazard=None, other_failure_time=None):
+        if other_failure_time is None:
+            time_obs, uncensored_indicator, censoring_rate = self.time_and_controls(self.generate_failure_time(hazard), self.generate_censoring_time(mu))
+        else:
+            time_obs, uncensored_indicator, censoring_rate = self.time_and_controls(other_failure_time, self.generate_censoring_time(mu))
         delta = np.ones(self.N)
         pi = np.ones(self.N)
-        result = pd.DataFrame({'time': a, 'event': b, 'subsample_indicator': delta, 'subsample_prob': pi}) # Use a dataframe to represent censored data
+        result = pd.DataFrame({'time': time_obs, 'event': uncensored_indicator, 'subsample_indicator': delta, 'subsample_prob': pi}) # Use a dataframe to represent censored data
         return result
 
-class fullSampleInference():
+class FullSampleInference():
     def __init__(self, w, x, data, g='id', h='exp'):
         self.N = data.shape[0]
         self.p1 = w.shape[1]
@@ -235,7 +240,7 @@ class fullSampleInference():
 
 
 
-class gamSampling():
+class GamSampling():
     def __init__(self, w, x, data, beta, gamma, g='id', h='exp'):
         self.N = data.shape[0]
         self.p1 = w.shape[1]
@@ -397,7 +402,7 @@ class gamSampling():
 
         return result
     
-    def getSubsample(self, subsampling_rate, method='optim'):
+    def get_subsample_data(self, subsampling_rate):
         temp1 = self.pi()
 
         # Optimal subsampling
@@ -420,7 +425,7 @@ class gamSampling():
         return sub_w, sub_x, sub_data
 
 
-class subSampleInference():
+class SubSampleInference():
     def __init__(self, w, x, data, g='id', h='exp'):
         self.N = data.shape[0]
         self.p1 = w.shape[1]
