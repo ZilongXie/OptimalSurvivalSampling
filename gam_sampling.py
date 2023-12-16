@@ -255,7 +255,7 @@ class GamSampling():
         self.w = z_DF.iloc[:,:self.p1].values # The W-covariate matrix
         self.x = z_DF.iloc[:,self.p1:self.p].values # The X-covariate matrix
         self.z = z_DF.values  # The Z-covariate matrix
-        self.data = data# The censored dataset
+        self.data = data # The censored dataset
         
         [self.uft, self.uft_ix, self.nuft,
          self.uet, self.uet_ix, self.nuet, self.uet_diff,
