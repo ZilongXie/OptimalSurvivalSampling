@@ -139,6 +139,10 @@ class FullSampleInference():
                 ixe = self.uet_ix[j] # Indices of cases that enter the risk set at current event time.
                 
                 hx0 += h_xlinpred[ixe].sum()
+
+                if hx0 < 1e-10:
+                    next
+
                 hx1 += (h_xlinpred[ixe][:,None] * self.z[ixe,:]).sum(0) 
                 hx2 += (dh_xlinpred[ixe][:,None] * self.x[ixe,:]).sum(0) 
                 hx3 += self.z[ixe,:].T.dot(dh_xlinpred[ixe][:,None] * self.x[ixe,:])
@@ -172,25 +176,54 @@ class FullSampleInference():
 
         return [score, jacobian, meat]
 
-    def Newton(self, theta0=None, stepsize=1e-2, max_iter=1e3, tol = 1e-1):
+    def Newton(self, theta0=None, stepsize=1, max_iter=100, max_search=10, tol = 1e-1):
         if (theta0 == None).any():
             theta0 = np.zeros(self.p)
-        theta = theta0.copy()
+
+        theta = theta0.copy()        
+        score, jacobian, meat = self.score_and_jacobian(theta)
+        score_norm = np.linalg.norm(score, ord=2)
 
         for t in np.arange(max_iter):
-            score, jacobian, meat = self.score_and_jacobian(theta)
-            score_norm = np.linalg.norm(score, ord=2)
-            print('iteration: ' + str(int(t + 1)) + ', ' + 'norm of score: '+str(score_norm))
+            theta_old = theta.copy()
+            score_old = score.copy()
+            jacobian_old = jacobian.copy()
+            meat_old = meat.copy()
+            score_norm_old = score_norm.copy()
 
             # Stop iteration if the norm of score is smaller than tol.
             if (score_norm <= tol):
                 break
 
             # Newton update
-            theta -= stepsize * inv(jacobian).dot(score)
+            for s in np.arange(max_search):
+                stepsize_s = stepsize/(2**s)
 
-            if (np.isnan(score_norm)):
+                try:
+                    theta = theta_old - stepsize_s * inv(jacobian_old).dot(score_old)
+                    theta = np.clip(theta, a_min=-5, a_max=5)
+                    score, jacobian, meat = self.score_and_jacobian(theta)
+                    score_norm = np.linalg.norm(score, ord=2)
+                except:
+                    # Decrese stepsize if there raises numerical error.
+                    next
+
+                print('iteration (%d, %s): norm of score %.3f'%(t+1, s+1, score_norm))
+                
+                if score_norm < score_norm_old:
+                    break
+            
+            if s >= max_search-1:
+                print('Linesearch attains maximal iteration.')
+                theta = theta_old.copy()
+                score = score_old.copy()
+                jacobian = jacobian_old.copy()
+                meat = meat_old.copy()
+                # Stop Newton iteration if score norm no longer decrease. 
                 break
+            
+        if t >= (max_iter-1):
+            print('Newton method attains maximal iteration.')
 
         # The plug-in estimate of standard error
         temp = inv(jacobian).dot(meat).dot(inv(jacobian).T)
@@ -306,6 +339,10 @@ class GamSampling():
                 ixe = self.uet_ix[j] # Indices of cases that enter the risk set at current event time.
                 
                 hx0 += h_xlinpred[ixe].sum()
+
+                if hx0 < 1e-10:
+                    next
+
                 hx1 += (h_xlinpred[ixe][:,None] * self.z[ixe,:]).sum(0)
                 hx2 += (dh_xlinpred[ixe][:,None] * self.x[ixe,:]).sum(0) 
                 hx3 += self.z[ixe,:].T.dot(dh_xlinpred[ixe][:,None] * self.x[ixe,:])
@@ -485,6 +522,10 @@ class SubSampleInference():
                 ixe = self.uet_ix[j] # Indices of cases that enter the risk set at current event time.
                 
                 hx0 += h_xlinpred[ixe].sum()
+
+                if hx0 < 1e-10:
+                    next
+
                 hx1 += (h_xlinpred[ixe][:,None] * self.z[ixe,:]).sum(0) 
                 hx2 += (dh_xlinpred[ixe][:,None] * self.x[ixe,:]).sum(0) 
                 hx3 += self.z[ixe,:].T.dot(dh_xlinpred[ixe][:,None] * self.x[ixe,:])
@@ -556,6 +597,10 @@ class SubSampleInference():
                 ixe = self.uet_ix[j] # Indices of cases that enter the risk set at current event time.
 
                 hx0 += h_xlinpred[ixe].sum()
+
+                if hx0 < 1e-10:
+                    next
+
                 hx1 += (h_xlinpred[ixe][:,None] * self.z[ixe,:]).sum(0)
                 hx2 += (dh_xlinpred[ixe][:,None] * self.x[ixe,:]).sum(0) 
                 hx3 += self.z[ixe,:].T.dot(dh_xlinpred[ixe][:,None] * self.x[ixe,:])
@@ -598,22 +643,51 @@ class SubSampleInference():
 
         return meat.T.dot(meat)
 
-    def Newton(self, theta0=None, stepsize=1e-2, max_iter=1e3, tol = 1e-1):
+    def Newton(self, theta0=None, stepsize=1, max_iter=100, max_search=10, tol = 1e-1):
         if (theta0 == None).any():
             theta0 = np.zeros(self.p)
-        theta = theta0.copy()
+        theta = theta0.copy()        
+        score, jacobian = self.score_and_jacobian(theta)
+        score_norm = np.linalg.norm(score, ord=2)
 
         for t in np.arange(max_iter):
-            score, jacobian = self.score_and_jacobian(theta)
-            score_norm = np.linalg.norm(score, ord=2)
-            print('iteration: ' + str(int(t + 1)) + ', ' + 'norm of score: '+str(np.linalg.norm(score, ord=2)))
+            theta_old = theta.copy()
+            score_old = score.copy()
+            jacobian_old = jacobian.copy()
+            score_norm_old = score_norm.copy()
 
             # Stop iteration if the norm of score is smaller than tol.
             if (score_norm <= tol):
                 break
 
             # Newton update
-            theta -= stepsize * inv(jacobian).dot(score)
+            for s in np.arange(max_search):
+                stepsize_s = stepsize/(2**s)
+                
+                try:
+                    theta = theta_old - stepsize_s * inv(jacobian_old).dot(score_old)
+                    theta = np.clip(theta, a_min=-5, a_max=5)
+                    score, jacobian = self.score_and_jacobian(theta)
+                    score_norm = np.linalg.norm(score, ord=2)
+                except:
+                    # Decrese stepsize if there raises numerical error.
+                    next
+
+                print('iteration (%d, %s): norm of score %.3f'%(t+1, s+1, score_norm))
+                
+                if score_norm < score_norm_old:
+                    break
+            
+            if s >= max_search-1:
+                print('Linesearch attains maximal iteration.')
+                theta = theta_old.copy()
+                score = score_old.copy()
+                jacobian = jacobian_old.copy()
+                # Stop Newton iteration if score norm no longer decrease. 
+                break
+
+        if t >= (max_iter-1):
+            print('Newton method attains maximal iteration.')
 
         # Compute meat matrix
         meat = self.meat(theta)
